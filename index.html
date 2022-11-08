@@ -1,0 +1,634 @@
+<head>
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet"
+    type="text/css" />
+  <script type="text/javascript"
+    src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.0.3/js/bootstrap.min.js"></script>
+  <link href="https://cdn.rawgit.com/davidstutz/bootstrap-multiselect/master/dist/css/bootstrap-multiselect.css"
+    rel="stylesheet" type="text/css" />
+  <script src="https://cdn.rawgit.com/davidstutz/bootstrap-multiselect/master/dist/js/bootstrap-multiselect.js"
+    type="text/javascript"></script>
+
+</head>
+
+<body>
+  <a class="btn btn-default" href="#" role="button" onclick="getCompressedPlot()">Compress time</a>
+  <a class="btn btn-default" href="#" role="button" onclick="getUncompressedPlot()">Uncompress time</a>
+  <select id="lstFruits" multiple="multiple" size="5" style="width:100px;"></select>
+
+  <input type="button" id="btnSelected" value="Get gdbf of selected peers" />
+  <input id="upstreamBox" class="btn btn-default" placeholder="upstream level"
+    onKeyDown="if(event.keyCode==13) changeUpstreamLevel();">
+  <a class="btn btn-default" href="#" role="button"
+    onclick="alert('Welcome on gdbDiagram viz platform! \nUsing this system you get a visualization of a sequence of as path. \nClick on compressed time button to get a view of the gdbdiagram in terms of sequence of as-path ignoring the time between two consecutive updates.\n Click on uncompress time button to  get a view of the gdbdiagram in terms of sequence of as-path considering the time between two consecutive updates (default).\n The default shows the GDBDiagram of the 2 most unstable collector peers. You can select other collect peers from drop down menu.\n You can also specify to consider only 1 level of upstream in as path processing. For example considering only the level 1 of upstream would transform the as path sequence [as1,as2,as3],[as7,as8,as3] in [as2],[as8].  \n Default visualization is for the two most unstable collector peers for GARR ip 193.294.167.185 in the last two days ')">Help</a>
+  <input id="datePicker" type="text" name="daterange" value="2017-11-11T1:30:00 - 2017-11-11T1:30:00" />
+  <input id="ipPrefix" class="btn btn-default" placeholder="ip prefix" />
+  <input id="nCpToShow" class="btn btn-default" placeholder="Number of cp To show" />
+  <input id="rrcs" class="btn btn-default" placeholder="rrc list (separated by comma)" />
+
+  <a class="btn btn-default" href="#" role="button" onclick="test()">getGDBdiagram!</a>
+
+  <div id="myDiv" align="center">
+    <!-- Plotly chart will be drawn inside this DIV -->
+  </div>
+
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/bootstrap/3/css/bootstrap.css" />
+
+  <!-- Include Date Range Picker -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
+  <link rel="stylesheet" type="text/css"
+    href="https://cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
+
+
+
+
+
+  <script>
+    function myFunction(url) {
+      window.open(url);
+    }
+
+    function test() {
+      date = document.getElementById("datePicker").value
+      start = date.split(" - ")[0]
+      end = date.split(" - ")[1]
+      nCpToShow = document.getElementById("nCpToShow").value
+      ipPrefix = document.getElementById("ipPrefix").value
+      rrcs = document.getElementById("rrcs").value
+
+
+      sequenceRrc = ""
+
+      if (rrcs == "all")
+        sequenceRrc = "0%2C1%2C2%2C5%2C6%2C7%2C10%2C11%2C13%2C14%2C15%2C16%2C18%2C20"
+      else {
+        rrcs = rrcs.value.split(",")
+
+        for (var i = 0; i <= rrcs.length - 1; i++) {
+          rrc = rrcs[i]
+          sequenceRrc += rrc + "%2C"
+        }
+        sequenceRrc = sequenceRrc.substring(0, sequenceRrc.length - 3)
+      }
+      url = "https://uniroma3.gitlab.io/compunet/networks/gdbdiagram-drawer/index.html#/?rrcs=" + sequenceRrc + "&nCpToShow=" + nCpToShow + "&ipPrefix=" + ipPrefix + "&start=" + start + "&end=" + end
+      myFunction(url)
+
+
+    }
+
+    function clearTable() {
+      $("#bodyTable").find("tr").remove();
+    }
+
+    function removePrepending(asPathData) {
+      console.log(asPathData)
+      asPathNoPrepending = ""
+
+      splittedAsPath = asPathData.split(",")
+      prev = splittedAsPath[0] + ","
+
+      asPathNoPrepending += prev
+
+      for (var i = 1; i <= splittedAsPath.length - 1; i++) {
+        next = splittedAsPath[i] + ","
+        if (next != prev)
+          asPathNoPrepending += next
+        prev = next
+      }
+      return asPathNoPrepending.substring(0, asPathNoPrepending.length - 1);
+    }
+
+    function changeUpstreamLevel() {
+      upStreamLevel = parseInt(document.getElementById("upstreamBox").value) + 1
+      listatest = 0
+      for (cp in toVisualize) {
+        idsSequenceNew = []
+
+        idSequenceOld = toVisualize[cp][2]
+        asPathSequence = toVisualize[cp][3]
+
+        for (var i = 0; i < asPathSequence.length; i++) {
+          if (asPathSequence[i] == "W")
+            asNumber = 0
+          else {
+            asPathData = asPathSequence[i].split("-")[0].split(" ")[1]
+            asPathDataNoPrepending = removePrepending(asPathData).split(",")
+            lengthASpathNoprep = asPathDataNoPrepending.length
+            asNumber = asPathDataNoPrepending[lengthASpathNoprep - upStreamLevel]
+          }
+
+          id = asPathToId[asNumber]
+          if (id == undefined) {
+            asPathToId[asNumber] = idCounter
+            idCounter += 100
+            id = idCounter
+          }
+          idsSequenceNew.push(asNumber)
+
+        }
+        toVisualize[cp][2] = idsSequenceNew
+      }
+      plotDiagram(toVisualize, start, end, resource, "notCompressed", idCounter, nCpToShow)
+    }
+
+    function getUncompressedPlot() {
+      plotDiagram(toVisualize, start, end, resource, "notCompressed", idCounter, nCpToShow)
+    }
+
+
+    function getCompressedPlot() {
+      plotDiagram(toVisualize, start, end, resource, "compressed", idCounter, nCpToShow)
+    }
+
+
+    function SetMedia(cpToObservationData) {
+
+      var options = [];
+
+     for (cp in cpToObservationData) {
+      options.push({label: cp + " (" + (cpToObservationData[cp][2].length) / 2 + ")", title: 'Option 6', value: cp});
+      }
+
+      $('#lstFruits').multiselect('dataprovider', options);
+
+      $('#btnSelected').click(function () {
+          var selected = $("#lstFruits option:selected");
+          var message = "";
+          selected.each(function () {
+            message += $(this).text() + "|";
+          });
+
+          getNewVisualization(cpToObservationData, message, "exact");
+        });
+
+    }
+
+    function getNewVisualization(cpToObservationData, message, typeOfVisualization) {
+      var nCpToShow = 0
+
+      toVisualize = new Object()
+      var splittedMessage = message.split("|");
+      for (var i = splittedMessage.length - 1; i >= 0; i--) {
+        cp = splittedMessage[i].split(" ")[0].replace(/\s/g, '');
+        if (cp != "") {
+          nCpToShow = nCpToShow + 1
+          toVisualize[cp] = cpToObservationData[cp]
+        }
+      }
+      plotDiagram(toVisualize, start, end, resource, typeOfVisualization, idCounter, nCpToShow)
+
+
+    }
+
+    function updateMostUnstable(mostUnstable, numberOfUpdates, cp, cpToObservationData, minOfMostUnstable, nCpToShow) {
+
+      if (Object.keys(mostUnstable).length < nCpToShow)
+        mostUnstable[cp] = cpToObservationData[cp]
+
+      else {
+        for (currentCp in mostUnstable) {
+
+          currentNumberOfUpdates = mostUnstable[currentCp][2].length
+
+          if (currentNumberOfUpdates == minOfMostUnstable) {
+            delete mostUnstable[currentCp]
+            mostUnstable[cp] = cpToObservationData[cp]
+            break
+          }
+        }
+      }
+      return mostUnstable
+    }
+
+    function getMinUpdatesCount(mostUnstable) {
+      currentMin = 2000000000000
+
+      for (currentCp in mostUnstable) {
+        currentNumberOfUpdates = mostUnstable[currentCp][2].length
+
+        if (currentNumberOfUpdates < currentMin) {
+          currentMin = currentNumberOfUpdates
+        }
+      }
+      return currentMin
+    }
+
+    function getNMostUnstableCPdata(cpToObservationData, nCpToShow) {
+      var mostUnstable = new Object()
+      var minOfMostUnstable = -1
+
+
+      if (Object.keys(cpToObservationData).length <= nCpToShow)
+        return cpToObservationData
+
+      for (cp in cpToObservationData) {
+        numberOfUpdates = cpToObservationData[cp][2].length
+
+        if (numberOfUpdates > minOfMostUnstable) {
+
+          mostUnstable = updateMostUnstable(mostUnstable, numberOfUpdates, cp, cpToObservationData, minOfMostUnstable, nCpToShow)
+          minOfMostUnstable = getMinUpdatesCount(mostUnstable)
+
+        }
+      }
+      return mostUnstable
+    }
+
+
+
+    function convertDateFotmate(p1) {
+      year = p1.getFullYear().toString()
+
+      month = (p1.getMonth() + 1).toString()
+      if (month.toString().length == 1)
+        month = "0" + month
+
+      day = p1.getDate().toString()
+      if (day.toString().length == 1)
+        day = "0" + day
+
+      hour = p1.getHours().toString()
+      if (hour.toString().length == 1)
+        hour = "0" + hour
+
+      minutes = p1.getMinutes().toString()
+      if (minutes.toString().length == 1)
+        minutes = "0" + minutes
+
+      seconds = p1.getSeconds().toString()
+      if (seconds.toString().length == 1)
+        seconds = "0" + seconds
+
+      return year + "-" + month + "-" + day + "T" + hour + ":" + minutes + ":" + seconds    // The function returns the product of p1 and p2
+    }
+
+    function getParameterByName(name, url) {
+      if (!url) url = window.location.href;
+      name = name.replace(/[\[\]]/g, "\\$&");
+
+      var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+        results = regex.exec(url);
+      if (!results) return null;
+      if (!results[2]) return '';
+      return decodeURIComponent(results[2].replace(/\+/g, " "));
+    }
+
+
+    function getTimestampSequence(typeOfVisualization, unstableCpToData) {
+      if (typeOfVisualization == "compressed")
+        return unstableCpToData[cp][1]
+      if (typeOfVisualization == "notCompressed")
+        return unstableCpToData[cp][0]
+      else
+        return unstableCpToData[cp][0]
+    }
+
+    function getCP(cpToObservationData) {
+      console.log("dentro")
+      cpToData = new Object()
+      for (cp in cpToObservationData) {
+        if (cp.split("-")[1] == cpTarget) {
+          cpToData[cp] = cpToObservationData[cp]
+          break
+        }
+      }
+      return cpToData
+    }
+
+    function plotDiagram(cpToObservationData, start, end, resource, typeOfVisualization, counter, nCpToShow) {
+
+
+      data = []
+      var cpCounter = 0
+      if (typeOfVisualization == "notCompressed") {
+        unstableCpToData = getNMostUnstableCPdata(cpToObservationData, nCpToShow)
+      }
+      else {
+        unstableCpToData = cpToObservationData
+      }
+
+      toVisualize = unstableCpToData
+      if (cpTarget != null){
+        toVisualize = getCP(cpToObservationData);
+      }
+
+
+      clearTable();
+      printIdToAsPath(asPathToId, toVisualize);
+
+      for (cp in toVisualize) {
+        cpCounter = cpCounter + 1
+        timestampSequence = getTimestampSequence(typeOfVisualization, unstableCpToData)//timestamp not compressed, timestampSequence
+        //timestampSequenceCompressed=unstableCpToData[cp][1]//timestamp compressed, timestampSequenceCompressed
+        idSequence = unstableCpToData[cp][2]//idsSequence
+        //asPathSequence=unstableCpToData[cp][3]//as path sequence
+
+        var colorRandom = '#' + (0x1000000 + (Math.random()) * 0xffffff).toString(16).substr(1, 6);
+
+        var trace = {
+          type: "scatter",
+          mode: "lines",
+          name: cp.toString(),
+          x: timestampSequence,
+          y: idSequence,
+          line: { color: colorRandom }
+        }
+        data.push(trace)
+
+      }
+      var layout = {
+        title: 'GDBDiagram of ' + resource + ' from ' + start + ' to ' + end,
+        xaxis: {
+          autorange: true,
+          range: [start, end],
+          rangeselector: {
+            buttons: [
+              {
+                count: 1,
+                label: '1m',
+                step: 'month',
+                stepmode: 'backward'
+              },
+              {
+                count: 6,
+                label: '6m',
+                step: 'month',
+                stepmode: 'backward'
+              },
+              { step: 'all' }
+            ]
+          },
+          rangeslider: { range: [start, end] },
+          type: 'date'
+        },
+        yaxis: {
+          autorange: true,
+          range: [0, counter],
+          type: 'linear'
+        }
+      };
+      Plotly.newPlot('myDiv', data, layout);
+    }
+
+
+
+    function getInitialState(json) {
+      inistialState = json.data.initial_state
+      for (var i = 0; i < json.data.sources.length; i++) {
+        cp = json.data.sources[i].id
+        cpToObservationData[cp] = []
+        cpToObservationData[cp][0] = []//timestamp not compressed, timestampSequence
+        cpToObservationData[cp][1] = []//timestamp compressed, timestampSequenceCompressed
+        cpToObservationData[cp][2] = []//idsSequence
+        cpToObservationData[cp][3] = []//as path sequence
+        cpToObservationData[cp][4] = convertDateFotmate(counterTimestampCompressed)
+
+        cpToObservationData[cp][0].push(start)
+        cpToObservationData[cp][1].push(convertDateFotmate(counterTimestampCompressed))
+        cpToObservationData[cp][2].push(0)
+        cpToObservationData[cp][3].push("W")
+
+      }
+      for (var i = 0; i < inistialState.length; i++) {
+        cp = inistialState[i].source_id
+        observationData = cpToObservationData[cp]
+        asPath = inistialState[i].path.toString()
+        community = inistialState[i].community.toString()
+        asPath = "ASpath " + asPath + " -Community " + community
+
+
+        cpToObservationData[cp][0] = [start]
+        cpToObservationData[cp][1] = [convertDateFotmate(counterTimestampCompressed)]
+        id = asPathToId[asPath]
+        if (id == undefined) {
+          asPathToId[asPath] = idCounter
+          cpToObservationData[cp][2] = [idCounter]
+          idCounter = idCounter + 100
+        }
+        else {
+          cpToObservationData[cp][2] = [id]
+        }
+        cpToObservationData[cp][3] = [asPath]
+      }
+      return cpToObservationData
+    }
+    function getEvents(json) {
+      events = json.data.events
+      for (var i = 0; i < events.length; i++) {
+        record = events[i]
+
+        cp = record.attrs.source_id
+        timestampSequence = cpToObservationData[cp][0]//timestamp not compressed, timestampSequence
+        timestampSequenceCompressed = cpToObservationData[cp][1]//timestamp compressed, timestampSequenceCompressed
+        idSequence = cpToObservationData[cp][2]//idsSequence
+        asPathSequence = cpToObservationData[cp][3]//as path sequence
+        currentCounterTimestampCompressed = new Date(cpToObservationData[cp][4])
+        if (record.type == "A") {
+          path = record.attrs.path.toString()
+          community = record.attrs.community.toString()
+          path = "ASpath " + path + " -Community " + community
+          timestamp = record.timestamp
+          prev = idSequence[idSequence.length - 1]
+          idSequence.push(prev)
+          timestampSequence.push(timestamp)
+          currentCounterTimestampCompressed.setMinutes(currentCounterTimestampCompressed.getMinutes() + 1);
+          timestampSequenceCompressed.push(convertDateFotmate(currentCounterTimestampCompressed))
+
+
+          prevAsPath = asPathSequence[asPathSequence.length - 1]
+          asPathSequence.push(prevAsPath)
+          asPathSequence.push(path)
+          id = asPathToId[path]
+          if (id == undefined) {
+            asPathToId[path] = idCounter
+            idSequence.push(idCounter)
+            timestampSequence.push(timestamp)
+            timestampSequenceCompressed.push(convertDateFotmate(currentCounterTimestampCompressed))
+            idCounter = idCounter + 100
+          }
+          else {
+            idSequence.push(id)
+            timestampSequence.push(timestamp)
+            timestampSequenceCompressed.push(convertDateFotmate(currentCounterTimestampCompressed))
+          }
+        }
+        else {
+          prevAsPath = asPathSequence[asPathSequence.length - 1]
+          asPathSequence.push(prevAsPath)
+          asPathSequence.push("W")
+
+          prev = idSequence[idSequence.length - 1]
+          idSequence.push(prev)
+          idSequence.push(0)
+
+          timestamp = record.timestamp
+
+          timestampSequence.push(timestamp)
+          timestampSequence.push(timestamp)
+
+          currentCounterTimestampCompressed.setMinutes(currentCounterTimestampCompressed.getMinutes() + 1);
+          timestampSequenceCompressed.push(convertDateFotmate(currentCounterTimestampCompressed))
+          timestampSequenceCompressed.push(convertDateFotmate(currentCounterTimestampCompressed))
+        }
+        cpToObservationData[cp][0] = timestampSequence//timestamp not compressed, timestampSequence
+        cpToObservationData[cp][1] = timestampSequenceCompressed//timestamp compressed, timestampSequenceCompressed
+        cpToObservationData[cp][2] = idSequence//idsSequence
+        cpToObservationData[cp][3] = asPathSequence//as path sequence
+        cpToObservationData[cp][4] = convertDateFotmate(currentCounterTimestampCompressed)
+
+      }
+      return cpToObservationData
+    }
+    function getEndState(json) {
+      end = json.data.query_endtime
+      for (cp in cpToObservationData) {
+        timestampSequence = cpToObservationData[cp][0]//timestamp not compressed, timestampSequence
+        timestampSequenceCompressed = cpToObservationData[cp][1]//timestamp compressed, timestampSequenceCompressed
+        idSequence = cpToObservationData[cp][2]//idsSequence
+        asPathSequence = cpToObservationData[cp][3]//as path sequence
+        currentCounterTimestampCompressed = new Date(cpToObservationData[cp][4])
+
+        prev = idSequence[idSequence.length - 1]
+        prevAsPath = asPathSequence[asPathSequence.length - 1]
+        idSequence.push(prev)
+        asPathSequence.push(prevAsPath)
+        timestampSequence.push(end)
+
+        cpToObservationData[cp][0] = timestampSequence//timestamp not compressed, timestampSequence
+        cpToObservationData[cp][1] = timestampSequenceCompressed//timestamp compressed, timestampSequenceCompressed
+        cpToObservationData[cp][2] = idSequence//idsSequence
+        cpToObservationData[cp][3] = asPathSequence//as path sequence
+        cpToObservationData[cp][4] = convertDateFotmate(currentCounterTimestampCompressed)//as path sequence
+
+      }
+      return cpToObservationData
+    }
+
+
+    var idSequence = []
+    var timestampSequence = []
+    var asPathToId = new Object()
+    asPathToId["W"] = 0
+    var cpToObservationData = new Object()
+    var typeOfVisualization = "notCompressed"
+    var start
+    var end
+    var counterTimestampCompressed
+    var toVisualize
+    var idCounter
+    var nCpToShow = 6
+
+    rrcList = getParameterByName("rrcs")
+    if (rrcList == null)
+      rrcList = "0%2C1%2C2%2C5%2C6%2C7%2C10%2C11%2C13%2C14%2C15%2C16%2C18%2C20"
+
+    nCpToShow = getParameterByName("nCpToShow")
+    if (nCpToShow == null) {
+      nCpToShow = 6
+    }
+    else {
+      nCpToShow = parseInt(nCpToShow)
+    }
+
+    resource = getParameterByName("ipPrefix")
+    if (resource == null)
+      resource = "193.204.167.185"
+
+    starttime = getParameterByName("start")
+    if (starttime == null)
+      starttime = "2017-11-07T08:12:42"
+
+    endtime = getParameterByName("end")
+    if (endtime == null)
+      endtime = "2017-11-09T08:11:42"
+
+    cpTarget = getParameterByName("cpTarget")
+
+
+
+    function defaultRun(starttime, endtime, resource, rrcList, nCpToShow) {
+      url = "https://stat.ripe.net/data/bgplay/data.json?endtime=" + endtime + "&resource=" + resource + "&rrcs=" + rrcList + "&starttime=" + starttime
+      console.log("inizio download")
+      d3.json(url, function (error, json) {
+        console.log("fine download")
+        start = json.data.query_starttime
+        end = json.data.query_endtime
+
+        counterTimestampCompressed = new Date(start)
+        idCounter = 100
+
+        cpToObservationData = getInitialState(json)
+        cpToObservationData = getEvents(json)
+        cpToObservationData = getEndState(json)
+
+
+        plotDiagram(cpToObservationData, start, end, resource, typeOfVisualization, idCounter, nCpToShow)
+        SetMedia(cpToObservationData)
+
+      })
+    }
+    defaultRun(starttime, endtime, resource, rrcList, nCpToShow)
+
+    function getAsPathFromIdToASPath(asPathToId, id) {
+      for (asPath in asPathToId) {
+        if (asPathToId[asPath] == id)
+          return asPath
+      }
+    }
+
+    function listContains(listOfAS, asPathSequence) {
+      for (var i = listOfAS.length - 1; i >= 0; i--) {
+        if (listOfAS[i] == asPathSequence)
+          return true
+      }
+      return false
+    }
+
+    function printIdToAsPath(asPathToId, toVisualize) {
+      listOfAS = []
+      for (cp in toVisualize) {
+        asPathSequence = toVisualize[cp][2]
+        for (var i = asPathSequence.length - 1; i >= 0; i--) {
+          if (listContains(listOfAS, asPathSequence[i]) == false) {
+            listOfAS.push(asPathSequence[i])
+            var str = "<tr><td>" + asPathSequence[i] + "</td><td style=\"word-break: break-all;\">" + getAsPathFromIdToASPath(asPathToId, asPathSequence[i]) + "</td></tr>"
+            $("#bodyTable").append(str);
+          }
+        }
+      }
+    }
+  </script>
+
+  <div class="container">
+    <h2>IDs Table</h2>
+    <p>This table shows the alignment between IDs and the pair ASPath/Community</p>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>ASPath/Community pair</th>
+        </tr>
+      </thead>
+      <tbody id="bodyTable">
+      </tbody>
+    </table>
+  </div>
+
+  <script type="text/javascript">
+    $(function () {
+      $('input[name="daterange"]').daterangepicker({
+        timePicker: true,
+        timePickerIncrement: 30,
+        locale: {
+          format: 'YYYY-MM-DDThh:mm:ss'
+        }
+      });
+    });
+
+  </script>
+</body>
